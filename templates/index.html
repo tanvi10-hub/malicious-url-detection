@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Malicious URL Detector - Protect Your Safety Online</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <!-- Animated Background -->
+    <div class="background">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-logo">
+                <span class="logo-icon">🔍</span>
+                <span class="logo-text">URL Detector</span>
+            </div>
+            <ul class="nav-menu">
+                <li><a href="#home" class="nav-link active">Home</a></li>
+                <li><a href="#features" class="nav-link">Features</a></li>
+                <li><a href="#detector" class="nav-link">Detector</a></li>
+                <li><a href="#team" class="nav-link">Team</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero" id="home">
+        <div class="hero-content">
+            <h1 class="hero-title">🛡️ Malicious URL Detector</h1>
+            <p class="hero-subtitle">Advanced AI-Powered Security Analysis</p>
+            <p class="hero-description">
+                Detect phishing, malware, and defacement attacks using Machine Learning.
+                Analyze URLs instantly and stay protected online.
+            </p>
+            <a href="#detector" class="hero-btn">Start Analyzing</a>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features" id="features">
+        <h2 class="section-title">Why Choose Us?</h2>
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon">⚡</div>
+                <h3>Lightning Fast</h3>
+                <p>Instant analysis with real-time predictions using advanced ML models</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🎯</div>
+                <h3>Highly Accurate</h3>
+                <p>99%+ accuracy powered by Random Forest and advanced feature extraction</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🔒</div>
+                <h3>Privacy Protected</h3>
+                <p>Your data stays secure. No URLs are logged or stored</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">📊</div>
+                <h3>Detailed Reports</h3>
+                <p>Get comprehensive analysis with probability scores for each threat type</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🤖</div>
+                <h3>AI-Powered</h3>
+                <p>Machine Learning algorithms detect 4 types of threats instantly</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🌍</div>
+                <h3>Always Available</h3>
+                <p>24/7 online protection and analysis for all URL types</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Detector Section -->
+    <section class="detector" id="detector">
+        <div class="detector-container">
+            <h2 class="detector-title">🔎 Analyze Your URL</h2>
+            <p class="detector-subtitle">Enter any URL below to check if it's safe or malicious</p>
+            
+            <div class="input-group">
+                <input 
+                    type="url" 
+                    id="urlInput" 
+                    class="url-input" 
+                    placeholder="Paste URL here... (e.g., https://www.google.com)"
+                    autocomplete="off"
+                >
+                <button id="analyzeBtn" class="analyze-btn">
+                    <span class="btn-text">ANALYZE URL</span>
+                    <span class="loader hidden"></span>
+                </button>
+            </div>
+
+            <!-- Error Display -->
+            <div id="errorAlert" class="alert alert-error hidden"></div>
+
+            <!-- Results Section -->
+            <div id="resultsContainer" class="results-container hidden">
+                <!-- Prediction Result -->
+                <div class="result-card">
+                    <div class="result-header" id="resultHeader">
+                        <div class="result-icon" id="resultIcon"></div>
+                        <div class="result-text">
+                            <h3 id="resultType">LOADING...</h3>
+                            <p id="resultReason"></p>
+                        </div>
+                    </div>
+                    <div class="confidence-box">
+                        <span class="confidence-label">Confidence Level</span>
+                        <div class="confidence-bar-container">
+                            <div class="confidence-bar" id="confidenceBar"></div>
+                            <span class="confidence-value" id="confidenceValue">0%</span>
+                        </div>
+                    </div>
+                    <div class="url-display">
+                        <strong>Analyzed URL:</strong>
+                        <p id="analyzedUrl"></p>
+                    </div>
+                </div>
+
+                <!-- Probability Breakdown -->
+                <div class="probability-section">
+                    <h4>📊 Threat Classification Breakdown</h4>
+                    <div class="probability-list">
+                        <div class="prob-item">
+                            <div class="prob-header">
+                                <span class="prob-label">🟢 Benign (Safe)</span>
+                                <span class="prob-value" id="prob-benign">0%</span>
+                            </div>
+                            <div class="prob-bar-container">
+                                <div class="prob-bar benign" id="bar-benign"></div>
+                            </div>
+                        </div>
+                        <div class="prob-item">
+                            <div class="prob-header">
+                                <span class="prob-label">🎣 Phishing</span>
+                                <span class="prob-value" id="prob-phishing">0%</span>
+                            </div>
+                            <div class="prob-bar-container">
+                                <div class="prob-bar phishing" id="bar-phishing"></div>
+                            </div>
+                        </div>
+                        <div class="prob-item">
+                            <div class="prob-header">
+                                <span class="prob-label">☠️ Malware</span>
+                                <span class="prob-value" id="prob-malware">0%</span>
+                            </div>
+                            <div class="prob-bar-container">
+                                <div class="prob-bar malware" id="bar-malware"></div>
+                            </div>
+                        </div>
+                        <div class="prob-item">
+                            <div class="prob-header">
+                                <span class="prob-label">🔨 Defacement</span>
+                                <span class="prob-value" id="prob-defacement">0%</span>
+                            </div>
+                            <div class="prob-bar-container">
+                                <div class="prob-bar defacement" id="bar-defacement"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- URL Features -->
+                <div class="features-section">
+                    <h4>🔬 URL Security Features</h4>
+                    <div class="features-grid-small">
+                        <div class="feature-item">
+                            <span class="feature-name">URL Length</span>
+                            <span class="feature-value" id="feat-url_length">--</span>
+                        </div>
+                        <div class="feature-item">
+                            <span class="feature-name">Contains HTTPS</span>
+                            <span class="feature-value" id="feat-has_https">--</span>
+                        </div>
+                        <div class="feature-item">
+                            <span class="feature-name">IP Address</span>
+                            <span class="feature-value" id="feat-has_ip_address">--</span>
+                        </div>
+                        <div class="feature-item">
+                            <span class="feature-name">Suspicious Keywords</span>
+                            <span class="feature-value" id="feat-has_suspicious_keyword">--</span>
+                        </div>
+                        <div class="feature-item">
+                            <span class="feature-name">Number of Dots</span>
+                            <span class="feature-value" id="feat-num_dots">--</span>
+                        </div>
+                        <div class="feature-item">
+                            <span class="feature-name">Number of Hyphens</span>
+                            <span class="feature-value" id="feat-num_hyphens">--</span>
+                        </div>
+                        <div class="feature-item">
+                            <span class="feature-name">@ Symbol</span>
+                            <span class="feature-value" id="feat-has_at_symbol">--</span>
+                        </div>
+                        <div class="feature-item">
+                            <span class="feature-name">Domain Length</span>
+                            <span class="feature-value" id="feat-domain_length">--</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Safety Tips -->
+                <div class="safety-tips">
+                    <h4>💡 Safety Tips</h4>
+                    <ul>
+                        <li>Always check the domain name carefully before clicking links</li>
+                        <li>Hover over links to see the actual destination URL</li>
+                        <li>Be suspicious of shortened URLs or encoded characters</li>
+                        <li>Legitimate companies never ask for passwords via email or links</li>
+                        <li>Keep your browser and antivirus software updated</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Instructions -->
+            <div class="instructions-box">
+                <h3>📖 How to Use</h3>
+                <ol>
+                    <li>Copy a URL you want to analyze</li>
+                    <li>Paste it into the input field above</li>
+                    <li>Click "ANALYZE URL"</li>
+                    <li>Review the detailed security report</li>
+                    <li>Check the threat probability breakdown</li>
+                </ol>
+            </div>
+
+            <!-- Example URLs -->
+            <div class="examples-box">
+                <h3>🌐 Try These Examples</h3>
+                <div class="example-buttons">
+                    <button class="example-btn" onclick="analyzeExampleURL('https://www.google.com')">Google (Safe)</button>
+                    <button class="example-btn" onclick="analyzeExampleURL('https://www.github.com')">GitHub (Safe)</button>
+                    <button class="example-btn" onclick="analyzeExampleURL('https://www.amazon.com')">Amazon (Safe)</button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Team Section -->
+    <section class="team" id="team">
+        <h2 class="section-title">👥 Meet Our Team</h2>
+        <div class="team-grid">
+            <div class="team-card">
+                <div class="team-avatar">TG</div>
+                <h3>Tanvi Gode</h3>
+                <p>Machine Learning Specialist</p>
+                <div class="team-skills">
+                    <span class="skill-badge">ML</span>
+                    <span class="skill-badge">Python</span>
+                </div>
+            </div>
+            <div class="team-card">
+                <div class="team-avatar">AS</div>
+                <h3>Astha Singh</h3>
+                <p>Data Science Engineer</p>
+                <div class="team-skills">
+                    <span class="skill-badge">Data Analysis</span>
+                    <span class="skill-badge">ML</span>
+                </div>
+            </div>
+            <div class="team-card">
+                <div class="team-avatar">GT</div>
+                <h3>Gayatri Tasalwar</h3>
+                <p>Full Stack Developer</p>
+                <div class="team-skills">
+                    <span class="skill-badge">Frontend</span>
+                    <span class="skill-badge">Backend</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <p>&copy; 2026 Malicious URL Detector | Built by Tanvi Gode, Astha Singh, Gayatri Tasalwar</p>
+            <p class="footer-subtitle">Advanced AI-Powered Cybersecurity Solution</p>
+        </div>
+    </footer>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
