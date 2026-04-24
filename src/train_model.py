@@ -38,8 +38,12 @@ def main():
     encoder = LabelEncoder()
     y_encoded = encoder.fit_transform(y)
 
+    # Keep model compact for low-memory deployments (e.g., Render free tier).
     model = RandomForestClassifier(
-        n_estimators=300,
+        n_estimators=80,
+        max_depth=12,
+        min_samples_leaf=3,
+        max_features="sqrt",
         random_state=42,
         n_jobs=-1
     )
@@ -48,7 +52,8 @@ def main():
     model.fit(X, y_encoded)
 
     os.makedirs(MODEL_DIR, exist_ok=True)
-    joblib.dump(model, MODEL_PATH)
+    # Compression reduces artifact size for upload/storage.
+    joblib.dump(model, MODEL_PATH, compress=3)
     joblib.dump(encoder, ENCODER_PATH)
 
     print(f"Saved model: {MODEL_PATH}")
