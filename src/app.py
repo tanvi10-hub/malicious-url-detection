@@ -33,6 +33,7 @@ app = Flask(
     static_folder=os.path.join(BASE_DIR, 'static')
 )
 app.config['SECRET_KEY'] = current_config.SECRET_KEY
+MODEL_INIT_ERROR = None
 
 
 def _download_file(url, destination):
@@ -93,6 +94,23 @@ except Exception as e:
     logger.error(f"Critical error: {str(e)}")
     model = None
     encoder = None
+    MODEL_INIT_ERROR = str(e)
+
+
+def ensure_models_loaded():
+    """Load models lazily if startup load failed."""
+    global model, encoder, MODEL_INIT_ERROR
+    if model is not None and encoder is not None:
+        return True, None
+
+    try:
+        model, encoder = load_models()
+        MODEL_INIT_ERROR = None
+        return True, None
+    except Exception as e:
+        MODEL_INIT_ERROR = str(e)
+        logger.error(f"Lazy model load failed: {MODEL_INIT_ERROR}")
+        return False, MODEL_INIT_ERROR
 
 @app.route('/')
 def home():
@@ -102,8 +120,9 @@ def home():
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint for deployment monitoring"""
-    if model is None or encoder is None:
-        return jsonify({'status': 'unhealthy', 'error': 'Models not loaded'}), 500
+    ok, error = ensure_models_loaded()
+    if not ok:
+        return jsonify({'status': 'unhealthy', 'error': f'Models not loaded: {error}'}), 500
     return jsonify({'status': 'healthy'}), 200
 
 @app.route('/analyze', methods=['POST'])
@@ -121,9 +140,10 @@ def analyze():
     """
     try:
         # Check if models are loaded
-        if model is None or encoder is None:
+        ok, error = ensure_models_loaded()
+        if not ok:
             logger.error("Models not loaded")
-            return jsonify({'error': 'Service unavailable: Models not loaded'}), 503
+            return jsonify({'error': f'Service unavailable: Models not loaded ({error})'}), 503
         
         # Get URL from request
         data = request.get_json()
