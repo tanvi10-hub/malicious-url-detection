@@ -1,0 +1,26 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+# After first deploy, set MODEL_URL and ENCODER_URL in the Render dashboard
+# (GitHub Release asset URLs or any HTTPS direct download links to your .pkl files).
+services:
+  - type: web
+    name: malicious-url-detector
+    runtime: python
+    plan: free
+    region: singapore
+    branch: main
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: gunicorn --worker-class=sync --workers=1 --timeout=120 --bind 0.0.0.0:$PORT src.app:app
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: FLASK_ENV
+        value: production
+      - key: SECRET_KEY
+        generateValue: true
+      - key: AUTO_DOWNLOAD_MODELS
+        value: "true"
+      - key: MODEL_URL
+        sync: false
+      - key: ENCODER_URL
+        sync: false

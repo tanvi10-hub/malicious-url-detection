@@ -217,4 +217,4 @@ Perfect for learning full-stack machine learning development!
 
 ---
 
-**Ready to use? Run `python src/app.py` and visit http://localhpip install -r requirements.txtost:5000** 🚀
+**Ready to use? Run `python src/app.py` and visit http://localhost:5000** 🚀

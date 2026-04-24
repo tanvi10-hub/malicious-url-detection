@@ -6,6 +6,7 @@ __pycache__/
 .Python
 env/
 venv/
+.venv/
 ENV/
 pip-log.txt
 pip-delete-this-directory.txt
@@ -39,15 +40,6 @@ Thumbs.db
 # Environment variables
 .env
 .env.local
-
-# Deployment (for GitHub, deploy later)
-Procfile
-Dockerfile
-docker-compose.yml
-app.yaml
-runtime.txt
-*.sh
-*.bat
 
 # Other
 *.zip

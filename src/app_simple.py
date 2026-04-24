@@ -1,122 +1,163 @@
 #!/usr/bin/env python3
 """
-Malicious URL Detector - Minimalist Version
-Runs URL predictions using the trained models
-No external widgets needed - pure analysis
+Malicious URL Detector - Minimalist CLI Version
+Runs URL predictions using trained models without Flask
 """
 
 import sys
 import os
+import logging
 import pandas as pd
 import joblib
-import re
-import math
-import tldextract
-from urllib.parse import urlparse
 
-# Trusted Domains List
-TRUSTED_DOMAINS = {
-    'google', 'youtube', 'facebook', 'twitter', 'instagram',
-    'linkedin', 'microsoft', 'apple', 'amazon', 'netflix',
-    'github', 'wikipedia', 'reddit', 'yahoo', 'bing', 'adobe',
-    'dropbox', 'spotify', 'paypal', 'ebay', 'whatsapp',
-    'telegram', 'zoom', 'slack', 'wordpress', 'shopify', 'salesforce'
-}
+# Add parent directory to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-def extract_all_features_v2(url):
-    """Extract features from URL"""
-    basic = {
-        'url_length': len(url), 'num_dots': url.count('.'), 'num_hyphens': url.count('-'),
-        'num_underscores': url.count('_'), 'num_slashes': url.count('/'), 'num_at': url.count('@'),
-        'num_question': url.count('?'), 'num_equals': url.count('='), 'num_ampersand': url.count('&'),
-        'num_digits': sum(c.isdigit() for c in url), 'num_special_chars': len(re.findall(r'[^a-zA-Z0-9]', url)),
-    }
-    security = {
-        'has_https': 1 if url.startswith('https') else 0, 'has_http': 1 if url.startswith('http') else 0,
-        'has_ip_address': 1 if re.search(r'\d+\.\d+\.\d+\.\d+', url) else 0, 'has_at_symbol': 1 if '@' in url else 0,
-        'has_double_slash': 1 if '//' in url[7:] else 0, 'has_prefix_suffix': 1 if '-' in urlparse(url).netloc else 0,
-    }
+from config import current_config
+from src.utils import extract_all_features_v2, normalize_url, is_valid_url
+
+# Configure logging
+logging.basicConfig(
+    level=current_config.LOG_LEVEL,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+def load_models():
+    """Load ML models from disk"""
     try:
-        extracted = tldextract.extract(url)
-        parsed = urlparse(url)
-        domain, subdomain, suffix = extracted.domain, extracted.subdomain, extracted.suffix
-        path, query = parsed.path, parsed.query
-        domain_f = {
-            'domain_length': len(domain), 'subdomain_length': len(subdomain), 'tld_length': len(suffix),
-            'path_length': len(path), 'query_length': len(query),
-            'num_subdomains': len(subdomain.split('.')) if subdomain else 0,
-            'is_trusted_domain': 1 if domain.lower() in TRUSTED_DOMAINS else 0,
-        }
-    except:
-        domain_f = {
-            'domain_length': 0, 'subdomain_length': 0, 'tld_length': 0, 'path_length': 0,
-            'query_length': 0, 'num_subdomains': 0, 'is_trusted_domain': 0,
-        }
-    
-    prob = [url.count(c) / len(url) for c in set(url)]
-    entropy = -sum(p * math.log2(p) for p in prob)
-    entropy_f = {'url_entropy': round(entropy, 4)}
+        if not os.path.exists(current_config.MODEL_PATH):
+            logger.error(f"Model file not found: {current_config.MODEL_PATH}")
+            return None, None
+        
+        if not os.path.exists(current_config.ENCODER_PATH):
+            logger.error(f"Encoder file not found: {current_config.ENCODER_PATH}")
+            return None, None
+        
+        model = joblib.load(current_config.MODEL_PATH)
+        encoder = joblib.load(current_config.ENCODER_PATH)
+        logger.info("Models loaded successfully")
+        return model, encoder
+    except Exception as e:
+        logger.error(f"Failed to load models: {str(e)}")
+        return None, None
 
-    suspicious_keywords = ['login', 'verify', 'secure', 'account', 'update', 'banking', 'confirm', 'password', 'signin', 'wallet', 'free', 'lucky', 'winner', 'click', 'setup', 'install']
-    keyword_f = {'has_suspicious_keyword': 1 if any(kw in url.lower() for kw in suspicious_keywords) else 0}
-    
-    features = {}
-    features.update(basic); features.update(security); features.update(domain_f)
-    features.update(entropy_f); features.update(keyword_f)
-    return features
 
-def analyze_url(url):
-    """Analyze a single URL"""
-    model_path = r'D:\malicious-url-detection\models\rf_model_v2.pkl'
-    encoder_path = r'D:\malicious-url-detection\models\label_encoder.pkl'
+def analyze_url(url, model, encoder):
+    """
+    Analyze a single URL
     
-    if not os.path.exists(model_path) or not os.path.exists(encoder_path):
-        print(f"ERROR: Model files not found at {model_path}")
+    Args:
+        url (str): URL to analyze
+        model: Trained ML model
+        encoder: Label encoder for predictions
+    
+    Returns:
+        bool: True if analysis successful, False otherwise
+    """
+    if model is None or encoder is None:
+        logger.error("Models not loaded")
         return False
     
-    model = joblib.load(model_path)
-    encoder = joblib.load(encoder_path)
+    # Normalize and validate URL
+    normalized_url = normalize_url(url)
+    if not is_valid_url(normalized_url):
+        print(f"❌ Invalid URL format: {url}")
+        return False
     
-    # Check if trusted domain
+    print("\n" + "="*80)
+    print(f"URL: {normalized_url}")
+    print("="*80)
+    
     try:
-        extracted = tldextract.extract(url)
-        domain_name = extracted.domain.lower()
-        is_trusted = domain_name in TRUSTED_DOMAINS
-    except:
-        is_trusted = False
-    
-    print("\n" + "="*70)
-    print(f"URL: {url}")
-    print("="*70)
-    
-    if is_trusted:
-        print("PREDICTION: BENIGN (Trusted Domain Whitelist)")
-        print("CONFIDENCE: 100.00%")
-    else:
-        features = pd.DataFrame([extract_all_features_v2(url)])
-        pred = model.predict(features)[0]
-        prob_vals = model.predict_proba(features)[0]
-        label = encoder.inverse_transform([pred])[0]
-        confidence = max(prob_vals)
+        # Extract features
+        features_dict = extract_all_features_v2(
+            normalized_url,
+            current_config.TRUSTED_DOMAINS,
+            current_config.SUSPICIOUS_KEYWORDS
+        )
         
-        print(f"PREDICTION: {label.upper()}")
-        print(f"CONFIDENCE: {confidence * 100:.2f}%")
-        print("\nCLASS PROBABILITIES:")
-        for lbl, prob in sorted(zip(encoder.classes_, prob_vals), key=lambda x: -x[1]):
-            print(f"  {lbl:12} {prob*100:6.2f}%")
+        # Check if trusted domain
+        import tldextract
+        extracted = tldextract.extract(normalized_url)
+        domain_name = extracted.domain.lower()
+        is_trusted = domain_name in current_config.TRUSTED_DOMAINS
+        
+        if is_trusted:
+            print("✅ PREDICTION:  BENIGN")
+            print("🔒 REASON:     Trusted Domain Whitelist")
+            print("📊 CONFIDENCE: 100.00%")
+        else:
+            # Make prediction
+            features_df = pd.DataFrame([features_dict])
+            pred = model.predict(features_df)[0]
+            prob_vals = model.predict_proba(features_df)[0]
+            label = encoder.inverse_transform([pred])[0]
+            confidence = max(prob_vals) * 100
+            
+            # Display results
+            status_icon = "✅" if label.lower() == "benign" else "⚠️"
+            print(f"{status_icon} PREDICTION:  {label.upper()}")
+            print(f"🔒 REASON:     ML Model Prediction (Random Forest)")
+            print(f"📊 CONFIDENCE: {confidence:.2f}%")
+            print("\n📈 CLASS PROBABILITIES:")
+            for lbl, prob in sorted(zip(encoder.classes_, prob_vals), key=lambda x: -x[1]):
+                bar_length = int(prob * 20)
+                bar = "█" * bar_length + "░" * (20 - bar_length)
+                print(f"   {lbl:12} [{bar}] {prob*100:6.2f}%")
+        
+        print("\n📋 EXTRACTED FEATURES:")
+        # Display key features
+        key_features = [
+            'url_length', 'has_https', 'has_ip_address', 
+            'num_dots', 'domain_length', 'is_trusted_domain',
+            'has_suspicious_keyword', 'url_entropy'
+        ]
+        for feat in key_features:
+            if feat in features_dict:
+                print(f"   {feat:25} = {features_dict[feat]}")
+        
+        print("="*80 + "\n")
+        return True
     
-    print("="*70 + "\n")
-    return True
+    except Exception as e:
+        logger.error(f"Error analyzing URL: {str(e)}")
+        print(f"❌ Error: {str(e)}")
+        return False
+
+
+def main():
+    """Main CLI function"""
+    print("\n🛡️  Malicious URL Detector - CLI Version")
+    print("="*80)
+    
+    # Load models
+    model, encoder = load_models()
+    if model is None or encoder is None:
+        print("❌ Failed to load models. Exiting.")
+        sys.exit(1)
+    
+    # Process command line arguments
+    if len(sys.argv) > 1:
+        success_count = 0
+        total_count = 0
+        
+        for url in sys.argv[1:]:
+            total_count += 1
+            if analyze_url(url, model, encoder):
+                success_count += 1
+        
+        print(f"Analyzed {success_count}/{total_count} URLs successfully")
+        sys.exit(0 if success_count == total_count else 1)
+    else:
+        print("\n📝 Usage: python app_simple.py <url1> [url2] [url3] ...")
+        print("\n📌 Examples:")
+        print("   python app_simple.py https://www.google.com")
+        print("   python app_simple.py http://example.com https://github.com")
+        print("\n" + "="*80)
+        sys.exit(0)
+
 
 if __name__ == "__main__":
-    print("\n🔍 Malicious URL Detector")
-    print("="*70)
-    
-    if len(sys.argv) > 1:
-        for url in sys.argv[1:]:
-            analyze_url(url)
-    else:
-        print("Usage: python app_simple.py <url1> [url2] [url3] ...")
-        print("\nExamples:")
-        print("  python app_simple.py https://www.google.com")
-        print("  python app_simple.py http://malicious-site.com https://github.com\n")
+    main()

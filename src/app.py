@@ -4,141 +4,242 @@ Built with Flask, featuring a modern, responsive UI
 Group Members: Tanvi Gode, Astha Singh, Gayatri Tasalwar
 """
 
-from flask import Flask, render_template, request, jsonify
+import logging
+import os
+import sys
 import joblib
 import pandas as pd
-import re
-import math
-import tldextract
-from urllib.parse import urlparse
-import os
+import requests
+from flask import Flask, render_template, request, jsonify
+from functools import lru_cache
 
-app = Flask(__name__, template_folder='../templates', static_folder='../static')
+# Import configuration and utilities
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import current_config
+from src.utils import extract_all_features_v2, normalize_url, is_valid_url
 
-# Trusted Domains
-TRUSTED_DOMAINS = {
-    'google', 'youtube', 'facebook', 'twitter', 'instagram',
-    'linkedin', 'microsoft', 'apple', 'amazon', 'netflix',
-    'github', 'wikipedia', 'reddit', 'yahoo', 'bing', 'adobe',
-    'dropbox', 'spotify', 'paypal', 'ebay', 'whatsapp',
-    'telegram', 'zoom', 'slack', 'wordpress', 'shopify', 'salesforce'
-}
+# Configure logging
+logging.basicConfig(
+    level=current_config.LOG_LEVEL,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
-def extract_all_features_v2(url):
-    """Extract all features from URL"""
-    basic = {
-        'url_length': len(url), 'num_dots': url.count('.'), 'num_hyphens': url.count('-'),
-        'num_underscores': url.count('_'), 'num_slashes': url.count('/'), 'num_at': url.count('@'),
-        'num_question': url.count('?'), 'num_equals': url.count('='), 'num_ampersand': url.count('&'),
-        'num_digits': sum(c.isdigit() for c in url), 'num_special_chars': len(re.findall(r'[^a-zA-Z0-9]', url)),
-    }
-    security = {
-        'has_https': 1 if url.startswith('https') else 0, 'has_http': 1 if url.startswith('http') else 0,
-        'has_ip_address': 1 if re.search(r'\d+\.\d+\.\d+\.\d+', url) else 0, 'has_at_symbol': 1 if '@' in url else 0,
-        'has_double_slash': 1 if '//' in url[7:] else 0, 'has_prefix_suffix': 1 if '-' in urlparse(url).netloc else 0,
-    }
+# Initialize Flask app
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+app = Flask(
+    __name__,
+    template_folder=os.path.join(BASE_DIR, 'templates'),
+    static_folder=os.path.join(BASE_DIR, 'static')
+)
+app.config['SECRET_KEY'] = current_config.SECRET_KEY
+
+
+def _download_file(url, destination):
+    """Download file from URL to destination path."""
+    if not url:
+        raise ValueError("Download URL is empty")
+
+    os.makedirs(os.path.dirname(destination), exist_ok=True)
+    with requests.get(url, stream=True, timeout=current_config.MODEL_DOWNLOAD_TIMEOUT) as response:
+        response.raise_for_status()
+        with open(destination, "wb") as file_handle:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    file_handle.write(chunk)
+
+
+def _ensure_model_file(path, url, file_label):
+    """Ensure model artifacts exist locally; optionally download them."""
+    if os.path.exists(path):
+        return
+
+    if not current_config.AUTO_DOWNLOAD_MODELS:
+        raise FileNotFoundError(f"{file_label} file not found: {path}")
+
+    logger.info(f"{file_label} missing. Downloading from configured URL.")
+    _download_file(url, path)
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"{file_label} download failed: {path}")
+
+# Load models safely
+@lru_cache(maxsize=1)
+def load_models():
+    """Load ML models from disk (cached)"""
     try:
-        extracted = tldextract.extract(url)
-        parsed    = urlparse(url)
-        domain    = extracted.domain
-        subdomain = extracted.subdomain
-        suffix    = extracted.suffix
-        path      = parsed.path
-        query     = parsed.query
-        domain_f  = {
-            'domain_length'     : len(domain),
-            'subdomain_length'  : len(subdomain),
-            'tld_length'        : len(suffix),
-            'path_length'       : len(path),
-            'query_length'      : len(query),
-            'num_subdomains'    : len(subdomain.split('.')) if subdomain else 0,
-            'is_trusted_domain' : 1 if domain.lower() in TRUSTED_DOMAINS else 0,
-        }
-    except:
-        domain_f = {
-            'domain_length': 0, 'subdomain_length': 0, 'tld_length': 0, 'path_length': 0,
-            'query_length': 0, 'num_subdomains': 0, 'is_trusted_domain': 0,
-        }
-    
-    prob = [url.count(c) / len(url) for c in set(url)]
-    entropy = -sum(p * math.log2(p) for p in prob)
-    entropy_f = {'url_entropy': round(entropy, 4)}
+        _ensure_model_file(
+            current_config.MODEL_PATH,
+            current_config.MODEL_URL,
+            "Model"
+        )
+        _ensure_model_file(
+            current_config.ENCODER_PATH,
+            current_config.ENCODER_URL,
+            "Encoder"
+        )
+        
+        model = joblib.load(current_config.MODEL_PATH)
+        encoder = joblib.load(current_config.ENCODER_PATH)
+        logger.info("Models loaded successfully")
+        return model, encoder
+    except Exception as e:
+        logger.error(f"Failed to load models: {str(e)}")
+        raise
 
-    suspicious_keywords = ['login', 'verify', 'secure', 'account', 'update', 'banking', 'confirm', 'password', 'signin', 'wallet', 'free', 'lucky', 'winner', 'click', 'setup', 'install']
-    keyword_f = {'has_suspicious_keyword': 1 if any(kw in url.lower() for kw in suspicious_keywords) else 0}
-    
-    features = {}
-    features.update(basic)
-    features.update(security)
-    features.update(domain_f)
-    features.update(entropy_f)
-    features.update(keyword_f)
-    return features
+# Load models on startup
+try:
+    model, encoder = load_models()
+except Exception as e:
+    logger.error(f"Critical error: {str(e)}")
+    model = None
+    encoder = None
 
 @app.route('/')
 def home():
+    """Serve the main page"""
     return render_template('index.html')
+
+@app.route('/health', methods=['GET'])
+def health():
+    """Health check endpoint for deployment monitoring"""
+    if model is None or encoder is None:
+        return jsonify({'status': 'unhealthy', 'error': 'Models not loaded'}), 500
+    return jsonify({'status': 'healthy'}), 200
 
 @app.route('/analyze', methods=['POST'])
 def analyze():
-    """API endpoint for URL analysis"""
-    data = request.json
-    url = data.get('url', '').strip()
+    """
+    API endpoint for URL analysis
     
-    if not url:
-        return jsonify({'error': 'Please enter a URL'}), 400
-    
-    try:
-        model = joblib.load(r'D:\malicious-url-detection\models\rf_model_v2.pkl')
-        encoder = joblib.load(r'D:\malicious-url-detection\models\label_encoder.pkl')
-    except Exception as e:
-        return jsonify({'error': f'Model loading error: {str(e)}'}), 500
-    
-    try:
-        extracted = tldextract.extract(url)
-        domain_name = extracted.domain.lower()
-        is_trusted = domain_name in TRUSTED_DOMAINS
-    except:
-        is_trusted = False
-    
-    if is_trusted:
-        result = {
-            'url': url,
-            'prediction': 'BENIGN',
-            'confidence': 100.0,
-            'reason': 'Trusted domain whitelist',
-            'safe': True,
-            'probabilities': {
-                'benign': 1.0,
-                'phishing': 0.0,
-                'malware': 0.0,
-                'defacement': 0.0
-            },
-            'features': extract_all_features_v2(url)
+    Expected JSON payload:
+        {
+            "url": "https://example.com"
         }
-    else:
-        features = pd.DataFrame([extract_all_features_v2(url)])
-        pred = model.predict(features)[0]
-        prob_vals = model.predict_proba(features)[0]
-        label = encoder.inverse_transform([pred])[0]
-        confidence = float(max(prob_vals))
+    
+    Returns:
+        JSON response with prediction, confidence, and features
+    """
+    try:
+        # Check if models are loaded
+        if model is None or encoder is None:
+            logger.error("Models not loaded")
+            return jsonify({'error': 'Service unavailable: Models not loaded'}), 503
         
-        result = {
-            'url': url,
-            'prediction': label.upper(),
-            'confidence': confidence * 100,
-            'reason': 'ML Model Prediction (Random Forest)',
-            'safe': label.lower() == 'benign',
-            'probabilities': {
-                lbl: float(prob) for lbl, prob in zip(encoder.classes_, prob_vals)
-            },
-            'features': extract_all_features_v2(url)
-        }
+        # Get URL from request
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Invalid request: JSON body required'}), 400
+        
+        url = data.get('url', '').strip()
+        
+        # Validate URL
+        if not url:
+            return jsonify({'error': 'Please enter a URL'}), 400
+        
+        # Normalize URL
+        normalized_url = normalize_url(url)
+        
+        # Check URL format
+        if not is_valid_url(normalized_url):
+            return jsonify({'error': 'Invalid URL format'}), 400
+        
+        # Check URL length
+        if len(normalized_url) > int(os.getenv('MAX_URL_LENGTH', 2000)):
+            return jsonify({'error': 'URL is too long'}), 400
+        
+        logger.info(f"Analyzing URL: {normalized_url[:50]}...")
+        
+        # Extract features
+        try:
+            features_dict = extract_all_features_v2(
+                normalized_url,
+                current_config.TRUSTED_DOMAINS,
+                current_config.SUSPICIOUS_KEYWORDS
+            )
+        except ValueError as e:
+            logger.error(f"Feature extraction error: {str(e)}")
+            return jsonify({'error': f'Feature extraction failed: {str(e)}'}), 400
+        except Exception as e:
+            logger.error(f"Unexpected error during feature extraction: {str(e)}")
+            return jsonify({'error': 'Feature extraction failed'}), 500
+        
+        # Check if trusted domain
+        import tldextract
+        try:
+            extracted = tldextract.extract(normalized_url)
+            domain_name = extracted.domain.lower()
+            is_trusted = domain_name in current_config.TRUSTED_DOMAINS
+        except Exception as e:
+            logger.warning(f"Error checking trusted domain: {str(e)}")
+            is_trusted = False
+        
+        # Generate prediction
+        if is_trusted:
+            result = {
+                'url': normalized_url,
+                'prediction': 'BENIGN',
+                'confidence': 100.0,
+                'reason': 'Trusted domain whitelist',
+                'safe': True,
+                'probabilities': {
+                    'benign': 1.0,
+                    'phishing': 0.0,
+                    'malware': 0.0,
+                    'defacement': 0.0
+                },
+                'features': features_dict
+            }
+            logger.info(f"URL classified as BENIGN (trusted domain)")
+        else:
+            try:
+                features_df = pd.DataFrame([features_dict])
+                pred = model.predict(features_df)[0]
+                prob_vals = model.predict_proba(features_df)[0]
+                label = encoder.inverse_transform([pred])[0]
+                confidence = float(max(prob_vals))
+                
+                result = {
+                    'url': normalized_url,
+                    'prediction': label.upper(),
+                    'confidence': confidence * 100,
+                    'reason': 'ML Model Prediction (Random Forest)',
+                    'safe': label.lower() == 'benign',
+                    'probabilities': {
+                        lbl: float(prob) for lbl, prob in zip(encoder.classes_, prob_vals)
+                    },
+                    'features': features_dict
+                }
+                logger.info(f"URL classified as {label.upper()} with confidence {confidence*100:.2f}%")
+            except Exception as e:
+                logger.error(f"Model prediction error: {str(e)}")
+                return jsonify({'error': 'Model prediction failed'}), 500
+        
+        return jsonify(result), 200
     
-    return jsonify(result)
+    except Exception as e:
+        logger.error(f"Unexpected error in analyze endpoint: {str(e)}", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.errorhandler(404)
+def not_found(error):
+    """Handle 404 errors"""
+    return jsonify({'error': 'Endpoint not found'}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    """Handle 500 errors"""
+    logger.error(f"Internal server error: {str(error)}")
+    return jsonify({'error': 'Internal server error'}), 500
 
 if __name__ == '__main__':
-    import os
-    debug_mode = os.getenv('FLASK_ENV', 'development') == 'development'
-    port = int(os.getenv('PORT', 5000))
-    app.run(debug=debug_mode, host='0.0.0.0', port=port)
+    try:
+        logger.info(f"Starting Flask app in {current_config.FLASK_ENV} mode")
+        app.run(
+            debug=current_config.DEBUG,
+            host=current_config.HOST,
+            port=current_config.PORT,
+            use_reloader=False
+        )
+    except Exception as e:
+        logger.error(f"Failed to start application: {str(e)}")
+        sys.exit(1)
